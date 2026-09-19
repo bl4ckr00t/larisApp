@@ -99,6 +99,12 @@ canvas{width:100%;height:150px;background:var(--soft);border-radius:14px}
 .notice{padding:12px 13px;border-radius:13px;background:var(--soft);font-size:12px;line-height:1.4;color:var(--muted)}
 .notice.good{background:var(--good-bg);color:var(--good);font-weight:700}
 
+.weekbars{display:flex;gap:6px;align-items:flex-end;height:70px}
+.weekbar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:5px}
+.weekbar{width:100%;border-radius:5px 5px 2px 2px;background:var(--soft);min-height:4px}
+.weekbar.trained{background:var(--accent)}
+.weekbar-label{font-size:9px;color:var(--muted);font-weight:600}
+
 .settings-toggle{background:none;color:var(--muted);font-size:11px;font-weight:600;text-decoration:underline;padding:0;min-height:auto}
 .settings{display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .settings.open{display:block}
@@ -204,6 +210,16 @@ canvas{width:100%;height:150px;background:var(--soft);border-radius:14px}
 
 <section class="panel" id="progress">
   <div class="card">
+    <div class="label">📅 Wochenrückblick</div>
+    <div class="grid3" style="margin-top:4px">
+      <div class="stat"><span class="label">Trainingstage</span><b id="weekTrainDays">0/7</b></div>
+      <div class="stat"><span class="label">Ø kcal/Tag</span><b id="weekAvgKcal">–</b></div>
+      <div class="stat"><span class="label">Trend 7 Tage</span><b id="weekWeightTrend">–</b></div>
+    </div>
+    <div class="weekbars" id="weekBars" style="margin-top:14px"></div>
+    <div class="small" style="margin-top:6px">Balkenhöhe = kcal an dem Tag · orange = Trainingstag</div>
+  </div>
+  <div class="card">
     <div class="label">🎯 Meilensteine</div>
     <div class="milestones" id="milestones"></div>
   </div>
@@ -233,6 +249,16 @@ canvas{width:100%;height:150px;background:var(--soft);border-radius:14px}
       <div class="stat"><span class="label">Bestwert</span><b id="best">–</b><span class="muted">kg</span></div>
     </div>
     <div id="trend" class="muted" style="margin-top:12px"></div>
+  </div>
+  <div class="card">
+    <div class="label">💾 Backup</div>
+    <div class="muted">Sichere deine Daten als Datei, oder stelle sie auf einem neuen Gerät wieder her.</div>
+    <div class="grid" style="margin-top:12px">
+      <button class="secondary" id="exportBtn">📤 Exportieren</button>
+      <button class="secondary" id="importBtn">📥 Importieren</button>
+    </div>
+    <input type="file" id="importFile" accept="application/json" hidden>
+    <div id="backupMsg" class="muted" style="margin-top:8px"></div>
   </div>
 </section>
 </main>
@@ -301,6 +327,65 @@ $("#saveFood").onclick=()=>{
 window.removeFood=i=>{s.foods.splice(i,1);save()};
 $("#openYazio").onclick=()=>window.open("https://www.yazio.com/","_blank");
 $("#openHealth").onclick=()=>alert("Apple Health bitte direkt auf deinem iPhone öffnen.");
+
+$("#exportBtn").onclick=async()=>{
+  const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});
+  const file=new File([blob],`fit-for-sexy-backup-${today}.json`,{type:"application/json"});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:"Fit For Sexy Backup"})}catch(e){}
+  }else{
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=file.name;a.click();
+    URL.revokeObjectURL(url);
+  }
+};
+$("#importBtn").onclick=()=>$("#importFile").click();
+$("#importFile").onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    let parsed;
+    try{parsed=JSON.parse(reader.result)}catch(err){$("#backupMsg").textContent="Fehler: Datei ist kein gültiges Backup.";return}
+    if(!confirm("Backup importieren? Das überschreibt deine aktuellen Daten auf diesem Gerät."))return;
+    s=Object.assign({goalStart:73.1,goalTarget:63.5,kcalBudget:1650,proteinTarget:140,weight:null,weights:[],measures:[],foods:[],logs:[],strength:0,runs:0,streak:0,lastActionDate:null},parsed);
+    save();
+    $("#backupMsg").textContent="✓ Backup importiert.";
+  };
+  reader.readAsText(f);
+  e.target.value="";
+};
+
+function renderWeekReview(){
+  const days=[];
+  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(d.toISOString().slice(0,10));}
+  let trainDays=0,kcalSum=0,kcalDays=0;
+  const bars=days.map(d=>{
+    const dayFoods=s.foods.filter(x=>x.d===d);
+    const kcal=dayFoods.reduce((a,x)=>a+x.k,0);
+    if(dayFoods.length){kcalSum+=kcal;kcalDays++}
+    const trained=s.logs.some(x=>x.date===d);
+    if(trained)trainDays++;
+    return{d,kcal,trained};
+  });
+  $("#weekTrainDays").textContent=trainDays+"/7";
+  $("#weekAvgKcal").textContent=kcalDays?Math.round(kcalSum/kcalDays).toLocaleString("de-AT"):"–";
+
+  const priorWeights=s.weights.slice().sort((a,b)=>a.d.localeCompare(b.d)).filter(x=>x.d<=days[0]);
+  const current=s.weight??s.goalStart;
+  if(priorWeights.length){
+    const delta=current-priorWeights[priorWeights.length-1].w;
+    $("#weekWeightTrend").textContent=(delta<=0?"":"+")+fmt(delta)+" kg";
+  }else{
+    $("#weekWeightTrend").textContent="–";
+  }
+
+  const maxKcal=Math.max(s.kcalBudget,...bars.map(b=>b.kcal),1);
+  $("#weekBars").innerHTML=bars.map(b=>{
+    const h=Math.max(4,Math.round((b.kcal/maxKcal)*60));
+    const label=DAY_LABEL[new Date(b.d+"T12:00:00").getDay()];
+    return `<div class="weekbar-col"><div class="weekbar${b.trained?' trained':''}" style="height:${h}px" title="${b.kcal} kcal"></div><div class="weekbar-label">${label}</div></div>`;
+  }).join('');
+}
 
 function logWorkout(type,note){
   s.logs.push({date:today,type,note});
@@ -385,6 +470,7 @@ function render(){
   $("#trend").textContent=ws.length>=2?(ws.at(-1).w<ws.at(-2).w?"🔥 Der letzte Eintrag ist niedriger als der davor.":"💗 Einzelne Schwankungen sind normal – wir schauen auf den längerfristigen Trend."):"Trag regelmäßig dein Gewicht ein, dann wird dein Trend sichtbar.";
 
   renderChart(ws);
+  renderWeekReview();
 }
 
 function renderChart(ws){

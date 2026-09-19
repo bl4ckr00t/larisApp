@@ -1,5 +1,5 @@
 // ponytail: bump CACHE name whenever index.html changes, so the old cache is replaced
-const CACHE = "ffs-v1";
+const CACHE = "ffs-v2";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest"];
 
 self.addEventListener("install", e => {
