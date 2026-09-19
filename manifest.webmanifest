@@ -1,0 +1,9 @@
+{
+  "name": "Fit For Sexy",
+  "short_name": "Fit For Sexy",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F2EFE8",
+  "theme_color": "#E24A1E",
+  "icons": []
+}
